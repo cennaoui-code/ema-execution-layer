@@ -1,0 +1,34 @@
+# EMA Execution Layer — OpenClaw + EMA MCP Server + Skills
+#
+# This builds the standard OpenClaw image, then layers in:
+# 1. EMA MCP Server (Node.js MCP server wrapping our API)
+# 2. EMA Skills (SKILL.md files for execution monitoring)
+# 3. EMA workspace config (SOUL.md, HEARTBEAT.md, openclaw.json)
+
+# ── Stage 1: Build EMA MCP Server ─────────────────────────────────
+FROM node:22-bookworm-slim AS mcp-build
+
+WORKDIR /mcp-server
+COPY mcp-server/package.json mcp-server/tsconfig.json ./
+RUN npm install --omit=dev 2>/dev/null; npm install
+COPY mcp-server/src ./src
+RUN npx tsc
+
+# ── Stage 2: Use official OpenClaw image ──────────────────────────
+FROM ghcr.io/openclaw/openclaw:latest
+
+# Copy EMA MCP Server
+COPY --from=mcp-build /mcp-server/dist /app/mcp-server/dist
+COPY --from=mcp-build /mcp-server/node_modules /app/mcp-server/node_modules
+COPY --from=mcp-build /mcp-server/package.json /app/mcp-server/package.json
+
+# Copy EMA Skills
+COPY skills/ema-execution /data/workspace/skills/ema-execution
+COPY skills/ema-dispatch-monitor /data/workspace/skills/ema-dispatch-monitor
+COPY skills/ema-verification /data/workspace/skills/ema-verification
+COPY skills/ema-pm-assistant /data/workspace/skills/ema-pm-assistant
+
+# Copy EMA Workspace config
+COPY workspace/SOUL.md /data/workspace/SOUL.md
+COPY workspace/HEARTBEAT.md /data/workspace/HEARTBEAT.md
+COPY workspace/openclaw.json /data/.openclaw/openclaw.json

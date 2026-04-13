@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: ema-openclaw
+    runtime: docker
+    dockerfilePath: Dockerfile.ema
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: OPENCLAW_GATEWAY_PORT
+        value: "8080"
+      - key: OPENCLAW_STATE_DIR
+        value: /data/.openclaw
+      - key: OPENCLAW_WORKSPACE_DIR
+        value: /data/workspace
+      - key: OPENCLAW_GATEWAY_TOKEN
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: EMA_API_URL
+        value: "https://api.samantha.cx"
+      - key: EMA_API_SECRET
+        sync: false
+      - key: EMA_WORKSPACE_ID
+        sync: false
+    disk:
+      name: ema-openclaw-data
+      mountPath: /data
+      sizeGB: 1

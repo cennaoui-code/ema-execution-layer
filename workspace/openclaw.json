@@ -1,0 +1,40 @@
+{
+  "$schema": "https://openclaw.ai/schema/config.json",
+  "gateway": {
+    "port": 8080
+  },
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "heartbeat": {
+        "every": "5m",
+        "target": "none",
+        "lightContext": true,
+        "isolatedSession": true,
+        "activeHours": {
+          "start": "00:00",
+          "end": "24:00"
+        }
+      },
+      "skills": [
+        "ema-execution",
+        "ema-dispatch-monitor",
+        "ema-verification",
+        "ema-pm-assistant"
+      ]
+    }
+  },
+  "mcp": {
+    "servers": {
+      "ema": {
+        "command": "node",
+        "args": ["/app/mcp-server/dist/index.js"],
+        "env": {
+          "EMA_API_URL": "${EMA_API_URL}",
+          "EMA_API_SECRET": "${EMA_API_SECRET}",
+          "EMA_WORKSPACE_ID": "${EMA_WORKSPACE_ID}"
+        }
+      }
+    }
+  }
+}
