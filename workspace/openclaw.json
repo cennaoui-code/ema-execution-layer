@@ -1,7 +1,8 @@
 {
   "$schema": "https://openclaw.ai/schema/config.json",
   "gateway": {
-    "port": 8080
+    "port": 10000,
+    "bind": "lan"
   },
   "agents": {
     "defaults": {
