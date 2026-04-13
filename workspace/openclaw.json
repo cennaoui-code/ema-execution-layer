@@ -2,7 +2,11 @@
   "$schema": "https://openclaw.ai/schema/config.json",
   "gateway": {
     "port": 10000,
-    "bind": "lan"
+    "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": ["https://ema-openclaw.onrender.com"],
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
   },
   "agents": {
     "defaults": {
