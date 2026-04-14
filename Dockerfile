@@ -274,4 +274,16 @@ USER node
 HEALTHCHECK --interval=3m --timeout=10s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:${PORT:-10000}/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 COPY ema-config.mjs /app/ema-config.mjs
-CMD ["sh", "-c", "node /app/ema-config.mjs && node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
+
+# Copy EMA MCP Server source and build it
+COPY mcp-server/package.json /app/ema-mcp/package.json
+COPY mcp-server/tsconfig.json /app/ema-mcp/tsconfig.json
+COPY mcp-server/src /app/ema-mcp/src
+RUN cd /app/ema-mcp && npm install --omit=dev 2>/dev/null; cd /app/ema-mcp && npm install && npx tsc
+
+# Copy EMA skills and workspace files
+COPY skills/ /app/ema-skills/
+COPY workspace/SOUL.md /app/ema-workspace/SOUL.md
+COPY workspace/HEARTBEAT.md /app/ema-workspace/HEARTBEAT.md
+
+CMD ["sh", "-c", "node /app/ema-config.mjs && cp -r /app/ema-skills/* /home/node/.openclaw/workspace/skills/ 2>/dev/null; cp /app/ema-workspace/* /home/node/.openclaw/workspace/ 2>/dev/null; node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]

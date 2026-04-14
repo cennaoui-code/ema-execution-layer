@@ -37,6 +37,19 @@ const config = {
       },
     },
   },
+  mcp: {
+    servers: {
+      ema: {
+        command: 'node',
+        args: ['/app/ema-mcp/dist/index.js'],
+        env: {
+          EMA_API_URL: emaApiUrl,
+          EMA_API_SECRET: emaApiSecret,
+          EMA_WORKSPACE_ID: emaWorkspaceId,
+        },
+      },
+    },
+  },
 };
 
 // Write to both possible config paths
