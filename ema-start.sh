@@ -19,6 +19,17 @@ config.agents = config.agents || {};
 config.agents.defaults = config.agents.defaults || {};
 config.agents.defaults.model = 'anthropic/claude-sonnet-4-6';
 config.agents.defaults.heartbeat = { every: '5m', target: 'none' };
+config.mcp = config.mcp || {};
+config.mcp.servers = config.mcp.servers || {};
+config.mcp.servers.ema = {
+  command: 'node',
+  args: ['/app/mcp-server/dist/index.js'],
+  env: {
+    EMA_API_URL: process.env.EMA_API_URL || 'https://api.samantha.cx',
+    EMA_API_SECRET: process.env.EMA_API_SECRET || '',
+    EMA_WORKSPACE_ID: process.env.EMA_WORKSPACE_ID || ''
+  }
+};
 fs.writeFileSync('${CONFIG_PATH}', JSON.stringify(config, null, 2));
 console.log('[ema] Config written to ${CONFIG_PATH}');
 console.log('[ema] Config:', JSON.stringify(config, null, 2));

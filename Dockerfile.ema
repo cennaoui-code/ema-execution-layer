@@ -31,8 +31,8 @@ COPY skills/ema-pm-assistant /data/workspace/skills/ema-pm-assistant
 # Copy EMA Workspace config to BOTH possible config paths
 COPY workspace/SOUL.md /data/workspace/SOUL.md
 COPY workspace/HEARTBEAT.md /data/workspace/HEARTBEAT.md
-COPY workspace/openclaw.json /data/.openclaw/openclaw.json
-COPY workspace/openclaw.json /home/node/.openclaw/openclaw.json
+# Don't COPY openclaw.json — the startup script writes it at runtime
+# to ensure controlUi and auth settings are correct for Render
 
 # Copy skills to home workspace too
 COPY skills/ema-execution /home/node/.openclaw/workspace/skills/ema-execution
