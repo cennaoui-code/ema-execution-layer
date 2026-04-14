@@ -42,5 +42,5 @@ COPY skills/ema-pm-assistant /home/node/.openclaw/workspace/skills/ema-pm-assist
 COPY workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
 COPY workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
 
-# Override CMD to bind to 0.0.0.0 on Render's port
-CMD ["sh", "-c", "node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
+# Write config at runtime and start gateway
+CMD ["sh", "-c", "mkdir -p /home/node/.openclaw && echo '{\"gateway\":{\"port\":'${PORT:-10000}',\"bind\":\"lan\",\"controlUi\":{\"dangerouslyAllowHostHeaderOriginFallback\":true}},\"agents\":{\"defaults\":{\"model\":\"anthropic/claude-sonnet-4-6\",\"heartbeat\":{\"every\":\"5m\",\"target\":\"none\"}}}}' > /home/node/.openclaw/openclaw.json && chown -R node:node /home/node/.openclaw && node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
