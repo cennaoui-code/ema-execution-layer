@@ -4,7 +4,7 @@
  * Writes the full config to both possible config paths before gateway starts.
  */
 
-const fs = require('fs');
+import fs from 'fs';
 
 const token = process.env.OPENCLAW_GATEWAY_TOKEN || 'default-token';
 const port = parseInt(process.env.PORT || '10000');

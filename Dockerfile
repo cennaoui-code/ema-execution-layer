@@ -273,5 +273,5 @@ USER node
 # For external access from host/ingress, override bind to "lan" and set auth.
 HEALTHCHECK --interval=3m --timeout=10s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:${PORT:-10000}/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-COPY ema-config.js /app/ema-config.js
-CMD ["sh", "-c", "node /app/ema-config.js && node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
+COPY ema-config.mjs /app/ema-config.mjs
+CMD ["sh", "-c", "node /app/ema-config.mjs && node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
