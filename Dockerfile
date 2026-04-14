@@ -280,7 +280,7 @@ USER root
 COPY mcp-server/package.json /app/ema-mcp/package.json
 COPY mcp-server/tsconfig.json /app/ema-mcp/tsconfig.json
 COPY mcp-server/src /app/ema-mcp/src
-RUN cd /app/ema-mcp && npm install && npx tsc
+RUN cd /app/ema-mcp && npm install && ./node_modules/.bin/tsc
 RUN chown -R node:node /app/ema-mcp
 
 # Copy EMA skills and workspace files
