@@ -43,7 +43,9 @@ COPY workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
 COPY workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
 
 # EMA startup script — patches config before starting gateway
-COPY ema-start.sh /app/ema-start.sh
-RUN chmod +x /app/ema-start.sh
+USER root
+COPY --chmod=755 ema-start.sh /app/ema-start.sh
+RUN chown -R node:node /home/node/.openclaw /data || true
+USER node
 
 CMD ["sh", "/app/ema-start.sh"]
