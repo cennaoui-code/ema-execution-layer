@@ -34,6 +34,7 @@ async function emaApi(path: string, options?: { method?: string; body?: Record<s
     headers: {
       'Content-Type': 'application/json',
       ...(EMA_API_SECRET ? { 'x-api-secret': EMA_API_SECRET } : {}),
+      ...(EMA_WORKSPACE_ID ? { 'x-workspace-id': EMA_WORKSPACE_ID } : {}),
     },
     ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
   });
