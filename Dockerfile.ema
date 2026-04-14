@@ -28,11 +28,19 @@ COPY skills/ema-dispatch-monitor /data/workspace/skills/ema-dispatch-monitor
 COPY skills/ema-verification /data/workspace/skills/ema-verification
 COPY skills/ema-pm-assistant /data/workspace/skills/ema-pm-assistant
 
-# Copy EMA Workspace config
+# Copy EMA Workspace config to BOTH possible config paths
 COPY workspace/SOUL.md /data/workspace/SOUL.md
 COPY workspace/HEARTBEAT.md /data/workspace/HEARTBEAT.md
 COPY workspace/openclaw.json /data/.openclaw/openclaw.json
+COPY workspace/openclaw.json /home/node/.openclaw/openclaw.json
+
+# Copy skills to home workspace too
+COPY skills/ema-execution /home/node/.openclaw/workspace/skills/ema-execution
+COPY skills/ema-dispatch-monitor /home/node/.openclaw/workspace/skills/ema-dispatch-monitor
+COPY skills/ema-verification /home/node/.openclaw/workspace/skills/ema-verification
+COPY skills/ema-pm-assistant /home/node/.openclaw/workspace/skills/ema-pm-assistant
+COPY workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
+COPY workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
 
 # Override CMD to bind to 0.0.0.0 on Render's port
-# --dangerously-allow-host-header-origin-fallback needed for non-loopback control UI
-CMD ["sh", "-c", "node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000} --dangerously-allow-host-header-origin-fallback"]
+CMD ["sh", "-c", "node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
