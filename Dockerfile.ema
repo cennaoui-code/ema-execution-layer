@@ -34,4 +34,5 @@ COPY workspace/HEARTBEAT.md /data/workspace/HEARTBEAT.md
 COPY workspace/openclaw.json /data/.openclaw/openclaw.json
 
 # Override CMD to bind to 0.0.0.0 on Render's port
-CMD ["sh", "-c", "node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
+# --dangerously-allow-host-header-origin-fallback needed for non-loopback control UI
+CMD ["sh", "-c", "node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000} --dangerously-allow-host-header-origin-fallback"]
