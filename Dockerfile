@@ -293,4 +293,4 @@ COPY workspace/HEARTBEAT.md /app/ema-workspace/HEARTBEAT.md
 RUN chown -R node:node /app/ema-skills /app/ema-workspace
 USER node
 
-CMD ["sh", "-c", "node /app/ema-config.mjs && cp -r /app/ema-skills/* /home/node/.openclaw/workspace/skills/ 2>/dev/null; cp /app/ema-workspace/* /home/node/.openclaw/workspace/ 2>/dev/null; node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
+CMD ["sh", "-c", "node /app/ema-config.mjs && mkdir -p /home/node/.openclaw/workspace/skills && cp -r /app/ema-skills/* /home/node/.openclaw/workspace/skills/ && cp /app/ema-workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md && cp /app/ema-workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md && echo '[ema] Skills and workspace files loaded' && node openclaw.mjs gateway --allow-unconfigured --bind lan --port ${PORT:-10000}"]
