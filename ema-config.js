@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+/**
+ * EMA OpenClaw Config Writer
+ * Writes the full config to both possible config paths before gateway starts.
+ */
+
+const fs = require('fs');
+
+const token = process.env.OPENCLAW_GATEWAY_TOKEN || 'default-token';
+const port = parseInt(process.env.PORT || '10000');
+const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+const emaApiUrl = process.env.EMA_API_URL || 'https://api.samantha.cx';
+const emaApiSecret = process.env.EMA_API_SECRET || '';
+const emaWorkspaceId = process.env.EMA_WORKSPACE_ID || '';
+
+const config = {
+  gateway: {
+    port: port,
+    bind: 'lan',
+    controlUi: {
+      dangerouslyAllowHostHeaderOriginFallback: true,
+      allowInsecureAuth: true,
+      dangerouslyDisableDeviceAuth: true,
+    },
+    auth: {
+      mode: 'token',
+      token: token,
+    },
+  },
+  agents: {
+    defaults: {
+      model: 'anthropic/claude-sonnet-4-6',
+      heartbeat: {
+        every: '5m',
+        target: 'none',
+        lightContext: true,
+      },
+    },
+  },
+};
+
+// Write to both possible config paths
+const paths = ['/data/.openclaw', '/home/node/.openclaw'];
+for (const dir of paths) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const configPath = dir + '/openclaw.json';
+
+    // Read existing config and merge (preserve any gateway-generated fields)
+    let existing = {};
+    try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch(e) {}
+
+    const merged = {
+      ...existing,
+      gateway: { ...existing.gateway, ...config.gateway },
+      agents: { ...existing.agents, ...config.agents },
+    };
+    // Ensure nested objects are merged properly
+    merged.gateway.controlUi = config.gateway.controlUi;
+    merged.gateway.auth = { ...existing?.gateway?.auth, ...config.gateway.auth };
+    merged.agents.defaults = { ...existing?.agents?.defaults, ...config.agents.defaults };
+
+    fs.writeFileSync(configPath, JSON.stringify(merged, null, 2));
+    console.log(`[ema] Config written to ${configPath}`);
+  } catch (err) {
+    console.error(`[ema] Failed to write config to ${dir}:`, err.message);
+  }
+}
+
+// Also write workspace files if they don't exist
+const workspaceDirs = ['/data/workspace', '/home/node/.openclaw/workspace'];
+for (const wsDir of workspaceDirs) {
+  try {
+    fs.mkdirSync(wsDir, { recursive: true });
+
+    const soulPath = wsDir + '/SOUL.md';
+    if (!fs.existsSync(soulPath)) {
+      fs.writeFileSync(soulPath, `# EMA — Emergency Compliance Response Agent
+
+You are EMA, an emergency maintenance compliance response agent for property management companies. You monitor work orders 24/7, dispatch vendors, communicate with tenants, and ensure every emergency gets resolved.
+
+Be concise. Lead with the answer. Sound like a competent operations coordinator, not a chatbot.
+`);
+      console.log(`[ema] SOUL.md written to ${soulPath}`);
+    }
+
+    const heartbeatPath = wsDir + '/HEARTBEAT.md';
+    if (!fs.existsSync(heartbeatPath)) {
+      fs.writeFileSync(heartbeatPath, `# Heartbeat Checklist
+
+Check active work orders. For each:
+- Vendor ETA passed + no check-in? → Alert
+- ETA within 15 min + tenant not reminded? → Send reminder
+- Work completed + not verified? → Schedule verification
+- No vendor assigned? → Find vendors
+
+If nothing needs attention, reply HEARTBEAT_OK.
+`);
+      console.log(`[ema] HEARTBEAT.md written to ${heartbeatPath}`);
+    }
+  } catch (err) {
+    console.error(`[ema] Failed to write workspace to ${wsDir}:`, err.message);
+  }
+}
+
+console.log('[ema] Configuration complete');
