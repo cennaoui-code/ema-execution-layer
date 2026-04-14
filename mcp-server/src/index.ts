@@ -23,6 +23,11 @@ const EMA_API_URL = process.env.EMA_API_URL || 'https://api.samantha.cx';
 const EMA_API_SECRET = process.env.EMA_API_SECRET || '';
 const EMA_WORKSPACE_ID = process.env.EMA_WORKSPACE_ID || '';
 
+// Debug: log config at startup
+console.error(`[ema-mcp] API URL: ${EMA_API_URL}`);
+console.error(`[ema-mcp] API Secret: ${EMA_API_SECRET ? '***set***' : 'EMPTY'}`);
+console.error(`[ema-mcp] Workspace ID: ${EMA_WORKSPACE_ID || 'EMPTY'}`);
+
 // ── API Helper ───────────────────────────────────────────────────────
 
 async function emaApi(path: string, options?: { method?: string; body?: Record<string, unknown> }): Promise<unknown> {
@@ -40,7 +45,9 @@ async function emaApi(path: string, options?: { method?: string; body?: Record<s
   });
 
   if (!res.ok) {
-    throw new Error(`EMA API ${method} ${path}: ${res.status} ${res.statusText}`);
+    const body = await res.text().catch(() => '');
+    console.error(`[ema-mcp] API error: ${method} ${path} → ${res.status} ${res.statusText} | ${body}`);
+    throw new Error(`EMA API ${method} ${path}: ${res.status} ${res.statusText} — ${body}`);
   }
   return res.json();
 }
