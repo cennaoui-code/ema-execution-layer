@@ -40,14 +40,28 @@ const config = {
 };
 
 // Write to both possible config paths
+// Also check for and remove any stale model config in agents dir
 const paths = ['/data/.openclaw', '/home/node/.openclaw'];
 for (const dir of paths) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     const configPath = dir + '/openclaw.json';
 
-    // Force-write our config (don't merge — our settings must win)
+    // Delete old config first to ensure clean state
+    try { fs.unlinkSync(configPath); } catch(e) {}
+
+    // Force-write our config
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    // Also check for agent-level model config that may override
+    const agentConfigDir = dir + '/agents/main/agent';
+    try {
+      const modelsPath = agentConfigDir + '/models.json';
+      if (fs.existsSync(modelsPath)) {
+        fs.unlinkSync(modelsPath);
+        console.log(`[ema] Removed stale ${modelsPath}`);
+      }
+    } catch(e) {}
     console.log(`[ema] Config written to ${configPath}`);
   } catch (err) {
     console.error(`[ema] Failed to write config to ${dir}:`, err.message);
