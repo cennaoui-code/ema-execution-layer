@@ -46,21 +46,8 @@ for (const dir of paths) {
     fs.mkdirSync(dir, { recursive: true });
     const configPath = dir + '/openclaw.json';
 
-    // Read existing config and merge (preserve any gateway-generated fields)
-    let existing = {};
-    try { existing = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch(e) {}
-
-    const merged = {
-      ...existing,
-      gateway: { ...existing.gateway, ...config.gateway },
-      agents: { ...existing.agents, ...config.agents },
-    };
-    // Ensure nested objects are merged properly
-    merged.gateway.controlUi = config.gateway.controlUi;
-    merged.gateway.auth = { ...existing?.gateway?.auth, ...config.gateway.auth };
-    merged.agents.defaults = { ...existing?.agents?.defaults, ...config.agents.defaults };
-
-    fs.writeFileSync(configPath, JSON.stringify(merged, null, 2));
+    // Force-write our config (don't merge — our settings must win)
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log(`[ema] Config written to ${configPath}`);
   } catch (err) {
     console.error(`[ema] Failed to write config to ${dir}:`, err.message);
