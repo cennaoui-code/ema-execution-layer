@@ -177,10 +177,14 @@ server.tool(
     message: z.string().describe('The SMS message text'),
   },
   async ({ phone, message }) => {
-    // Validate phone is in our DB before sending (security: no arbitrary numbers)
-    const result = await emaApi('/api/notifications/test', {
+    const result = await emaApi('/api/dispatch/send-notification', {
       method: 'POST',
-      body: { type: 'sms', recipient: phone, message, workspaceId: EMA_WORKSPACE_ID },
+      body: {
+        phone,
+        template: message, // If not a template name, the service uses it as raw text
+        variables: {},
+        workspaceId: EMA_WORKSPACE_ID,
+      },
     });
     return { content: [{ type: 'text' as const, text: `SMS sent to ${phone}` }] };
   },
@@ -280,6 +284,96 @@ server.tool(
   {},
   async () => {
     const result = await emaApi(`/api/coaching/rules?workspaceId=${EMA_WORKSPACE_ID}`);
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+// ── Execution Layer Tools ─────────────────────────────────────────────
+
+server.tool(
+  'send_dispatch_notification',
+  'Send a templated dispatch SMS. Templates: vendor_dispatched, eta_reminder, vendor_arrived, work_completed, verification_resolved, verification_not_resolved, no_show_alert, escalation.',
+  {
+    phone: z.string().describe('Recipient phone (E.164)'),
+    template: z.string().describe('Template name'),
+    variables: z.string().describe('JSON object of template variables: requester_name, vendor_name, issue_type, location, eta, reason'),
+    workOrderId: z.string().optional().describe('Work order UUID'),
+    incidentId: z.string().optional().describe('Incident UUID'),
+  },
+  async ({ phone, template, variables, workOrderId, incidentId }) => {
+    const result = await emaApi('/api/dispatch/send-notification', {
+      method: 'POST',
+      body: { phone, template, variables: JSON.parse(variables), workspaceId: EMA_WORKSPACE_ID, workOrderId, incidentId },
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  'vendor_checkin',
+  'Mark a vendor as arrived on-site for a work order.',
+  {
+    workOrderId: z.string().describe('Work order UUID'),
+    vendorName: z.string().optional().describe('Vendor name'),
+  },
+  async ({ workOrderId, vendorName }) => {
+    const result = await emaApi(`/api/workorders/${workOrderId}/checkin`, {
+      method: 'POST',
+      body: { vendorName, workspaceId: EMA_WORKSPACE_ID },
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  'vendor_complete',
+  'Mark a work order as completed by the vendor.',
+  {
+    workOrderId: z.string().describe('Work order UUID'),
+    notes: z.string().optional().describe('Completion notes'),
+    cost: z.number().optional().describe('Final cost'),
+  },
+  async ({ workOrderId, notes, cost }) => {
+    const result = await emaApi(`/api/workorders/${workOrderId}/complete`, {
+      method: 'POST',
+      body: { notes, cost, workspaceId: EMA_WORKSPACE_ID },
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  'report_scope_change',
+  'Report a scope change on a work order. If revised cost exceeds NTE, triggers re-authorization.',
+  {
+    workOrderId: z.string().describe('Work order UUID'),
+    revisedDiagnosis: z.string().describe('What the vendor found'),
+    revisedCost: z.number().describe('New estimated cost'),
+    vendorRecommendation: z.string().optional().describe('Vendor recommendation'),
+  },
+  async ({ workOrderId, revisedDiagnosis, revisedCost, vendorRecommendation }) => {
+    const result = await emaApi(`/api/workorders/${workOrderId}/scope-change`, {
+      method: 'POST',
+      body: { revisedDiagnosis, revisedCost, vendorRecommendation, workspaceId: EMA_WORKSPACE_ID },
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  'log_agent_action',
+  'Log an agent action to the incident timeline for auditability.',
+  {
+    incidentId: z.string().optional().describe('Incident UUID'),
+    workOrderId: z.string().optional().describe('Work order UUID'),
+    actionType: z.string().describe('Action type: DISPATCHED_VENDOR, SENT_SMS, CALLED_VENDOR, NO_SHOW_CHECK, VERIFIED, ESCALATED, CLOSED'),
+    description: z.string().describe('Human-readable description of what happened'),
+  },
+  async ({ incidentId, workOrderId, actionType, description }) => {
+    const result = await emaApi('/api/dispatch/log-action', {
+      method: 'POST',
+      body: { incidentId, workOrderId, workspaceId: EMA_WORKSPACE_ID, actionType, description },
+    });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
