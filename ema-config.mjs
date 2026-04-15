@@ -34,6 +34,13 @@ const config = {
         every: '5m',
         target: 'none',
         lightContext: true,
+        isolatedSession: true,
+        // Use Haiku for heartbeat checks (cost saving — heartbeats are frequent)
+        model: 'anthropic/claude-haiku-4-5',
+      },
+      // Subagent/spawned tasks use Haiku by default (cost control)
+      subagents: {
+        model: 'anthropic/claude-haiku-4-5',
       },
     },
   },
