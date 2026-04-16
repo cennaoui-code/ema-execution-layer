@@ -48,6 +48,22 @@ const config = {
       },
     },
   },
+  // Only load EMA-specific skills into agent context.
+  // Without this, all 62 bundled OpenClaw skills (1password, spotify, bear-notes, etc.)
+  // are loaded per heartbeat, wasting ~1-2K input tokens each call.
+  skills: {
+    allowBundled: [
+      'ema-execution',
+      'ema-dispatch-monitor',
+      'ema-pm-assistant',
+      'ema-verification',
+      'ema-auth-request',
+      'ema-escalation',
+      'ema-notification',
+      'ema-reminder',
+      'ema-status-check',
+    ],
+  },
   mcp: {
     servers: {
       ema: {
