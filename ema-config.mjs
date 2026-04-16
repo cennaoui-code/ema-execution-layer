@@ -30,17 +30,21 @@ const config = {
   agents: {
     defaults: {
       model: 'anthropic/claude-sonnet-4-6',
+      // 1-hour cache (vs default 5min "short") for repeated system prompts
+      params: { cacheRetention: 'long' },
       heartbeat: {
-        every: '5m',
+        every: '15m',  // was 5m — 3x cost reduction, still fast enough for SLA detection
         target: 'none',
         lightContext: true,
         isolatedSession: true,
         // Use Haiku for heartbeat checks (cost saving — heartbeats are frequent)
         model: 'anthropic/claude-haiku-4-5',
+        params: { cacheRetention: 'long' },
       },
       // Subagent/spawned tasks use Haiku by default (cost control)
       subagents: {
         model: 'anthropic/claude-haiku-4-5',
+        params: { cacheRetention: 'long' },
       },
     },
   },
