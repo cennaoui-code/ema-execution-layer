@@ -26,20 +26,50 @@ const EMA_WORKSPACE_ID = process.env.EMA_WORKSPACE_ID || '';
 // Debug: log config at startup
 console.error(`[ema-mcp] API URL: ${EMA_API_URL}`);
 console.error(`[ema-mcp] API Secret: ${EMA_API_SECRET ? '***set***' : 'EMPTY'}`);
-console.error(`[ema-mcp] Workspace ID: ${EMA_WORKSPACE_ID || 'EMPTY'}`);
+if (EMA_WORKSPACE_ID) {
+  console.error(`[ema-mcp] Mode: single-workspace (EMA_WORKSPACE_ID=${EMA_WORKSPACE_ID})`);
+  console.error(`[ema-mcp] Tool calls can override via workspaceId parameter.`);
+} else {
+  console.error(`[ema-mcp] Mode: multi-tenant (every tool call MUST pass workspaceId)`);
+}
 
 // ── API Helper ───────────────────────────────────────────────────────
 
-async function emaApi(path: string, options?: { method?: string; body?: Record<string, unknown> }): Promise<unknown> {
+/**
+ * Resolve the workspaceId for an MCP tool call.
+ *
+ * Priority:
+ *   1. Explicit parameter passed by the calling agent
+ *   2. EMA_WORKSPACE_ID env var (legacy single-workspace mode)
+ *
+ * If neither is set, throws — the server is misconfigured (should run in
+ * single-workspace mode with env var OR multi-tenant mode with explicit
+ * params on every call, not neither).
+ */
+function resolveWorkspaceId(explicit?: string): string {
+  const ws = (explicit && explicit.trim()) || EMA_WORKSPACE_ID;
+  if (!ws) {
+    throw new Error(
+      'No workspaceId resolved. Either set EMA_WORKSPACE_ID env (single-workspace mode) or pass workspaceId as a tool parameter (multi-tenant mode).',
+    );
+  }
+  return ws;
+}
+
+async function emaApi(
+  path: string,
+  options?: { method?: string; body?: Record<string, unknown>; workspaceId?: string },
+): Promise<unknown> {
   const url = `${EMA_API_URL}${path}`;
   const method = options?.method ?? 'GET';
+  const wsId = options?.workspaceId || EMA_WORKSPACE_ID;
 
   const res = await fetch(url, {
     method,
     headers: {
       'Content-Type': 'application/json',
       ...(EMA_API_SECRET ? { 'x-api-secret': EMA_API_SECRET } : {}),
-      ...(EMA_WORKSPACE_ID ? { 'x-workspace-id': EMA_WORKSPACE_ID } : {}),
+      ...(wsId ? { 'x-workspace-id': wsId } : {}),
     },
     ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
   });
@@ -63,11 +93,15 @@ const server = new McpServer({
 
 server.tool(
   'read_work_orders',
-  'Get all active work orders for this workspace. Returns WO id, status, vendor, ETA, priority, tenant info.',
-  { status: z.string().optional().describe('Filter by status: RUNNING, COMPLETED, ERROR, or ALL') },
-  async ({ status }) => {
-    const query = `workspaceId=${EMA_WORKSPACE_ID}${status && status !== 'ALL' ? `&status=${status}` : ''}`;
-    const result = await emaApi(`/api/workorders?${query}`) as { data: unknown[] };
+  'Get all active work orders for the specified workspace (or default from env). Returns WO id, status, vendor, ETA, priority, tenant info.',
+  {
+    status: z.string().optional().describe('Filter by status: RUNNING, COMPLETED, ERROR, or ALL'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ status, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const query = `workspaceId=${wsId}${status && status !== 'ALL' ? `&status=${status}` : ''}`;
+    const result = await emaApi(`/api/workorders?${query}`, { workspaceId: wsId }) as { data: unknown[] };
     return { content: [{ type: 'text' as const, text: JSON.stringify(result.data, null, 2) }] };
   },
 );
@@ -75,9 +109,13 @@ server.tool(
 server.tool(
   'get_work_order',
   'Get details of a specific work order by ID.',
-  { workOrderId: z.string().describe('The work order UUID') },
-  async ({ workOrderId }) => {
-    const result = await emaApi(`/api/workorders?workspaceId=${EMA_WORKSPACE_ID}&cursor=&take=100`);
+  {
+    workOrderId: z.string().describe('The work order UUID'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ workOrderId, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/workorders?workspaceId=${wsId}&cursor=&take=100`, { workspaceId: wsId });
     // Find specific WO from the list (no single-WO endpoint yet)
     const data = (result as { data: Array<{ id: string }> }).data;
     const wo = data.find((w) => w.id === workOrderId);
@@ -98,10 +136,12 @@ server.tool(
     trade: z.string().optional().describe('Trade type (plumbing, electrical, etc.)'),
     authorizationStatus: z.string().optional().describe('pre_authorized, authorized, denied'),
     authorizedBy: z.string().optional().describe('Who authorized the spend'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
   async (args) => {
-    const { workOrderId, ...body } = args;
-    const result = await emaApi(`/api/workorders/${workOrderId}/dispatch`, { method: 'PATCH', body });
+    const { workOrderId, workspaceId, ...body } = args;
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/workorders/${workOrderId}/dispatch`, { method: 'PATCH', body, workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -111,19 +151,26 @@ server.tool(
 server.tool(
   'find_vendors',
   'Find available vendors for a specific trade. Returns ranked list by priority, response time, and rate.',
-  { trade: z.string().describe('Trade type: plumbing, electrical, hvac, locksmith, pest control, handyman, etc.') },
-  async ({ trade }) => {
-    const result = await emaApi(`/api/vendors/dispatch?trade=${encodeURIComponent(trade)}&workspaceId=${EMA_WORKSPACE_ID}`);
+  {
+    trade: z.string().describe('Trade type: plumbing, electrical, hvac, locksmith, pest control, handyman, etc.'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ trade, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/vendors/dispatch?trade=${encodeURIComponent(trade)}&workspaceId=${wsId}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
 
 server.tool(
   'get_all_vendors',
-  'List all vendors for this workspace.',
-  {},
-  async () => {
-    const result = await emaApi(`/api/vendors?workspaceId=${EMA_WORKSPACE_ID}`);
+  'List all vendors for the specified workspace (or default from env).',
+  {
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/vendors?workspaceId=${wsId}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -132,12 +179,16 @@ server.tool(
 
 server.tool(
   'read_incidents',
-  'Get all incidents for this workspace. Returns incident number, title, severity, status, lead, actions.',
-  { status: z.string().optional().describe('Filter: INVESTIGATING, FIXING, TRIAGE, MONITORING, RESOLVED') },
-  async ({ status }) => {
-    let query = `workspaceId=${EMA_WORKSPACE_ID}`;
+  'Get all incidents for the specified workspace (or default from env). Returns incident number, title, severity, status, lead, actions.',
+  {
+    status: z.string().optional().describe('Filter: INVESTIGATING, FIXING, TRIAGE, MONITORING, RESOLVED'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ status, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    let query = `workspaceId=${wsId}`;
     if (status) query += `&status=${status}`;
-    const result = await emaApi(`/api/team-incidents?${query}`);
+    const result = await emaApi(`/api/team-incidents?${query}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -145,9 +196,13 @@ server.tool(
 server.tool(
   'get_incident',
   'Get full details of a specific incident including actions, activities, escalations.',
-  { incidentId: z.string().describe('The incident UUID') },
-  async ({ incidentId }) => {
-    const result = await emaApi(`/api/team-incidents/${incidentId}`);
+  {
+    incidentId: z.string().describe('The incident UUID'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ incidentId, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/team-incidents/${incidentId}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -160,9 +215,11 @@ server.tool(
     status: z.string().optional().describe('New status: INVESTIGATING, FIXING, TRIAGE, MONITORING, RESOLVED'),
     severity: z.string().optional().describe('New severity: CRITICAL, MAJOR, MINOR'),
     incidentLeadId: z.string().optional().describe('User ID to assign as incident lead'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ incidentId, ...body }) => {
-    const result = await emaApi(`/api/team-incidents/${incidentId}`, { method: 'PATCH', body });
+  async ({ incidentId, workspaceId, ...body }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/team-incidents/${incidentId}`, { method: 'PATCH', body, workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -175,16 +232,19 @@ server.tool(
   {
     phone: z.string().describe('Recipient phone number (E.164 format, e.g. +12125551234)'),
     message: z.string().describe('The SMS message text'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ phone, message }) => {
+  async ({ phone, message, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     const result = await emaApi('/api/dispatch/send-notification', {
       method: 'POST',
       body: {
         phone,
         template: message, // If not a template name, the service uses it as raw text
         variables: {},
-        workspaceId: EMA_WORKSPACE_ID,
+        workspaceId: wsId,
       },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: `SMS sent to ${phone}` }] };
   },
@@ -194,16 +254,18 @@ server.tool(
 
 server.tool(
   'check_nte_limit',
-  'Check the Not-To-Exceed spending limit for this workspace/property/trade.',
+  'Check the Not-To-Exceed spending limit for the specified workspace/property/trade (or default workspace from env).',
   {
     propertyId: z.string().optional().describe('Property UUID (optional, for property-specific NTE)'),
     trade: z.string().optional().describe('Trade type (optional, for trade-specific NTE)'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ propertyId, trade }) => {
-    let query = `workspaceId=${EMA_WORKSPACE_ID}`;
+  async ({ propertyId, trade, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    let query = `workspaceId=${wsId}`;
     if (propertyId) query += `&propertyId=${propertyId}`;
     if (trade) query += `&trade=${encodeURIComponent(trade)}`;
-    const result = await emaApi(`/api/workorders/nte-limit?${query}`);
+    const result = await emaApi(`/api/workorders/nte-limit?${query}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -216,12 +278,14 @@ server.tool(
   {
     propertyId: z.string().optional().describe('Property UUID'),
     emergencyType: z.string().optional().describe('Emergency type (gas_leak, fire, flooding, etc.)'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ propertyId, emergencyType }) => {
-    let query = `workspaceId=${EMA_WORKSPACE_ID}`;
+  async ({ propertyId, emergencyType, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    let query = `workspaceId=${wsId}`;
     if (propertyId) query += `&propertyId=${propertyId}`;
     if (emergencyType) query += `&emergencyType=${encodeURIComponent(emergencyType)}`;
-    const result = await emaApi(`/api/escalation-paths?${query}`);
+    const result = await emaApi(`/api/escalation-paths?${query}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -235,8 +299,10 @@ server.tool(
     phone: z.string().describe('Phone number to call (E.164 format)'),
     callType: z.string().describe('Call type: vendor_briefing, no_show_check, verification, authorize, vendor_exhausted'),
     context: z.string().describe('JSON context for the call (incident details, work order info, etc.)'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ phone, callType, context }) => {
+  async ({ phone, callType, context, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     // This will be wired to create a LiveKit room and trigger the appropriate voice skill
     // For now, log the intent
     const result = await emaApi('/api/dispatch/outbound-call', {
@@ -245,8 +311,9 @@ server.tool(
         phone,
         callType,
         context: JSON.parse(context),
-        workspaceId: EMA_WORKSPACE_ID,
+        workspaceId: wsId,
       },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
@@ -256,10 +323,13 @@ server.tool(
 
 server.tool(
   'get_properties',
-  'List all properties managed by this workspace.',
-  {},
-  async () => {
-    const result = await emaApi(`/api/properties?workspaceId=${EMA_WORKSPACE_ID}`);
+  'List all properties managed by the specified workspace (or default from env).',
+  {
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/properties?workspaceId=${wsId}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -268,10 +338,13 @@ server.tool(
 
 server.tool(
   'get_oncall_schedule',
-  'Get who is currently on-call for this workspace.',
-  {},
-  async () => {
-    const result = await emaApi(`/api/oncall-schedules?workspaceId=${EMA_WORKSPACE_ID}`);
+  'Get who is currently on-call for the specified workspace (or default from env).',
+  {
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/oncall-schedules?workspaceId=${wsId}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -280,10 +353,13 @@ server.tool(
 
 server.tool(
   'get_coaching_rules',
-  'Get active coaching rules for this workspace. These are behavioral directives from the PM.',
-  {},
-  async () => {
-    const result = await emaApi(`/api/coaching/rules?workspaceId=${EMA_WORKSPACE_ID}`);
+  'Get active coaching rules for the specified workspace (or default from env). These are behavioral directives from the PM.',
+  {
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
+  },
+  async ({ workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi(`/api/coaching/rules?workspaceId=${wsId}`, { workspaceId: wsId });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -299,11 +375,14 @@ server.tool(
     variables: z.string().describe('JSON object of template variables: requester_name, vendor_name, issue_type, location, eta, reason'),
     workOrderId: z.string().optional().describe('Work order UUID'),
     incidentId: z.string().optional().describe('Incident UUID'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ phone, template, variables, workOrderId, incidentId }) => {
+  async ({ phone, template, variables, workOrderId, incidentId, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     const result = await emaApi('/api/dispatch/send-notification', {
       method: 'POST',
-      body: { phone, template, variables: JSON.parse(variables), workspaceId: EMA_WORKSPACE_ID, workOrderId, incidentId },
+      body: { phone, template, variables: JSON.parse(variables), workspaceId: wsId, workOrderId, incidentId },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
@@ -315,11 +394,14 @@ server.tool(
   {
     workOrderId: z.string().describe('Work order UUID'),
     vendorName: z.string().optional().describe('Vendor name'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ workOrderId, vendorName }) => {
+  async ({ workOrderId, vendorName, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     const result = await emaApi(`/api/workorders/${workOrderId}/checkin`, {
       method: 'POST',
-      body: { vendorName, workspaceId: EMA_WORKSPACE_ID },
+      body: { vendorName, workspaceId: wsId },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
@@ -332,11 +414,14 @@ server.tool(
     workOrderId: z.string().describe('Work order UUID'),
     notes: z.string().optional().describe('Completion notes'),
     cost: z.number().optional().describe('Final cost'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ workOrderId, notes, cost }) => {
+  async ({ workOrderId, notes, cost, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     const result = await emaApi(`/api/workorders/${workOrderId}/complete`, {
       method: 'POST',
-      body: { notes, cost, workspaceId: EMA_WORKSPACE_ID },
+      body: { notes, cost, workspaceId: wsId },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
@@ -350,11 +435,14 @@ server.tool(
     revisedDiagnosis: z.string().describe('What the vendor found'),
     revisedCost: z.number().describe('New estimated cost'),
     vendorRecommendation: z.string().optional().describe('Vendor recommendation'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ workOrderId, revisedDiagnosis, revisedCost, vendorRecommendation }) => {
+  async ({ workOrderId, revisedDiagnosis, revisedCost, vendorRecommendation, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     const result = await emaApi(`/api/workorders/${workOrderId}/scope-change`, {
       method: 'POST',
-      body: { revisedDiagnosis, revisedCost, vendorRecommendation, workspaceId: EMA_WORKSPACE_ID },
+      body: { revisedDiagnosis, revisedCost, vendorRecommendation, workspaceId: wsId },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
@@ -368,11 +456,14 @@ server.tool(
     workOrderId: z.string().optional().describe('Work order UUID'),
     actionType: z.string().describe('Action type: DISPATCHED_VENDOR, SENT_SMS, CALLED_VENDOR, NO_SHOW_CHECK, VERIFIED, ESCALATED, CLOSED'),
     description: z.string().describe('Human-readable description of what happened'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID (legacy). Required when running in multi-tenant mode.'),
   },
-  async ({ incidentId, workOrderId, actionType, description }) => {
+  async ({ incidentId, workOrderId, actionType, description, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
     const result = await emaApi('/api/dispatch/log-action', {
       method: 'POST',
-      body: { incidentId, workOrderId, workspaceId: EMA_WORKSPACE_ID, actionType, description },
+      body: { incidentId, workOrderId, workspaceId: wsId, actionType, description },
+      workspaceId: wsId,
     });
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
   },
@@ -385,7 +476,7 @@ async function main() {
   await server.connect(transport);
   console.error('EMA MCP Server running on stdio');
   console.error(`API: ${EMA_API_URL}`);
-  console.error(`Workspace: ${EMA_WORKSPACE_ID}`);
+  console.error(`Workspace (default): ${EMA_WORKSPACE_ID || '(none — multi-tenant mode)'}`);
 }
 
 main().catch((err) => {
