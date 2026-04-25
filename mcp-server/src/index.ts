@@ -514,7 +514,7 @@ server.tool(
     workOrderId: z.string().describe('Work order UUID'),
     cronType: z.enum(['eta-reminder', 'arrival-check', 'noshow-trigger', 'verification', 'warranty']),
     firesAt: z.string().describe('ISO timestamp when the cron should fire'),
-    metadata: z.record(z.unknown()).optional().describe('Optional payload to attach to the cron'),
+    metadata: z.record(z.string(), z.unknown()).optional().describe('Optional payload to attach to the cron'),
     workspaceId: z.string().optional(),
   },
   async ({ workOrderId, cronType, firesAt, metadata, workspaceId }) => {
