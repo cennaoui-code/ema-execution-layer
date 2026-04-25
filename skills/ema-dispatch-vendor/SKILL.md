@@ -8,7 +8,7 @@ tools:
   - update_work_order
   - log_agent_action
   - schedule_cron
-  - update_runtime_state
+  - update_runtime_state   # C5: shipped Apr 25, single endpoint w/ 4 actions
 ---
 
 # EMA Dispatch Vendor — TaskFlow
@@ -24,7 +24,9 @@ Triggered by a `workorder.dispatched` event from the openclaw_event_queue (HEART
 ## Step-by-step
 
 ### Step 1 — Read WO state
-Call `get_work_order` with `workOrderId`. Extract: `priority`, `dispatchTrade`, `nteAmount`, `tenantPhone`, current `vendorAttemptIndex` (from runtimeState).
+Call `get_work_order` with `workOrderId`. Extract: `priority`, `dispatchTrade`, `nteAmount`, `tenantPhone`.
+
+Then call `update_runtime_state` with `action="upsertOnDispatch"` and the same `workOrderId` + `workspaceId`. This either creates the runtime row (currentState=DISPATCHING, vendorAttemptIndex=0) or returns the existing one (preserves vendorAttemptIndex from a prior attempt). The response gives you `vendorAttemptIndex` — use that as the index for Step 2.
 
 ### Step 2 — Pick the next vendor
 Call `find_vendors` with `trade=dispatchTrade`. The result is a ranked list. Skip the first `vendorAttemptIndex` candidates (they were already tried). Take the next.
@@ -44,6 +46,7 @@ This is a real LiveKit-backed call. The result comes back asynchronously — the
 
 #### Outcome: accepted
 - Call `update_work_order` with `vendorName=vendor.name`, `vendorEta=<from-call>`, `dispatchedAt=now`, `workflowStatus="ASSIGNED"`
+- Call `update_runtime_state` with `action="transition", newState="ASSIGNED", metadataMerge={vendorId, vendorName, eta}`
 - Call `log_agent_action` with `actionType="VENDOR_ACCEPTED"` and metadata={vendorId, vendorName, eta}
 - Call `schedule_cron` for `eta-reminder` (firesAt = ETA - 15min)
 - Call `schedule_cron` for `arrival-check` (firesAt = ETA)
@@ -52,12 +55,12 @@ This is a real LiveKit-backed call. The result comes back asynchronously — the
 
 #### Outcome: declined
 - Call `log_agent_action` with `actionType="VENDOR_DECLINED"` and metadata={vendorId, reason if given}
-- Call `update_runtime_state` to bump `vendorAttemptIndex` by 1
+- Call `update_runtime_state` with `action="bumpVendorAttempt"` to advance the index by 1 atomically
 - Re-enter Step 2 with the new index. (Same heartbeat cycle — don't wait.)
 
 #### Outcome: no_answer
 - Call `log_agent_action` with `actionType="VENDOR_NO_ANSWER"` and metadata={vendorId}
-- Call `update_runtime_state` to bump `vendorAttemptIndex` by 1
+- Call `update_runtime_state` with `action="bumpVendorAttempt"` to advance the index by 1 atomically
 - Re-enter Step 2 with the new index.
 
 ## Suppression / safety

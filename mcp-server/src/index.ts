@@ -528,6 +528,37 @@ server.tool(
   },
 );
 
+server.tool(
+  'update_runtime_state',
+  'Manipulate the per-WO runtime state row (vendorAttemptIndex, currentState, metadata). One endpoint, four actions: upsertOnDispatch / bumpVendorAttempt / transition / get. Used by ema_dispatch_vendor TaskFlow to track which vendor index to try next + which state the WO is logically in. Audit fix C5.',
+  {
+    action: z.enum(['upsertOnDispatch', 'bumpVendorAttempt', 'transition', 'get']),
+    workOrderId: z.string().describe('Work order UUID'),
+    workspaceId: z.string().optional().describe('Workspace; required for upsertOnDispatch'),
+    incidentId: z.string().optional().describe('Incident UUID, optional, only for upsertOnDispatch'),
+    newState: z.string().optional().describe('New state label, required for transition (e.g., ASSIGNED, ESCALATED)'),
+    metadataMerge: z.record(z.string(), z.unknown()).optional().describe('Optional shallow-merge metadata for transition'),
+  },
+  async ({ action, workOrderId, workspaceId, incidentId, newState, metadataMerge }) => {
+    const wsId = action === 'upsertOnDispatch' ? resolveWorkspaceId(workspaceId) : workspaceId;
+    const body: Record<string, unknown> = { action, workOrderId };
+    if (action === 'upsertOnDispatch') {
+      body.workspaceId = wsId;
+      if (incidentId) body.incidentId = incidentId;
+    } else if (action === 'transition') {
+      if (!newState) throw new Error('transition requires newState');
+      body.newState = newState;
+      if (metadataMerge) body.metadataMerge = metadataMerge;
+    }
+    const result = await emaApi('/api/dispatch/runtime-state', {
+      method: 'POST',
+      body,
+      workspaceId: wsId,
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
 // ── Start Server ─────────────────────────────────────────────────────
 
 async function main() {
