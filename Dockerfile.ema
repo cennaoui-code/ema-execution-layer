@@ -22,11 +22,19 @@ COPY --from=mcp-build /mcp-server/dist /app/mcp-server/dist
 COPY --from=mcp-build /mcp-server/node_modules /app/mcp-server/node_modules
 COPY --from=mcp-build /mcp-server/package.json /app/mcp-server/package.json
 
-# Copy EMA Skills
-COPY skills/ema-execution /data/workspace/skills/ema-execution
-COPY skills/ema-dispatch-monitor /data/workspace/skills/ema-dispatch-monitor
-COPY skills/ema-verification /data/workspace/skills/ema-verification
-COPY skills/ema-pm-assistant /data/workspace/skills/ema-pm-assistant
+# Copy EMA Skills — all 9. Previous version shipped only 4, leaving 5 skills
+# defined in the repo but missing from the image at runtime (per
+# 04-openclaw-repo.md discovery). Phase 1 fix: ship them all so the
+# allowBundled list in workspace/openclaw.json is satisfied.
+COPY skills/ema-execution         /data/workspace/skills/ema-execution
+COPY skills/ema-dispatch-monitor  /data/workspace/skills/ema-dispatch-monitor
+COPY skills/ema-verification      /data/workspace/skills/ema-verification
+COPY skills/ema-pm-assistant      /data/workspace/skills/ema-pm-assistant
+COPY skills/ema-auth-request      /data/workspace/skills/ema-auth-request
+COPY skills/ema-escalation        /data/workspace/skills/ema-escalation
+COPY skills/ema-notification      /data/workspace/skills/ema-notification
+COPY skills/ema-reminder          /data/workspace/skills/ema-reminder
+COPY skills/ema-status-check      /data/workspace/skills/ema-status-check
 
 # Copy EMA Workspace config to BOTH possible config paths
 COPY workspace/SOUL.md /data/workspace/SOUL.md
@@ -34,11 +42,16 @@ COPY workspace/HEARTBEAT.md /data/workspace/HEARTBEAT.md
 # Don't COPY openclaw.json — the startup script writes it at runtime
 # to ensure controlUi and auth settings are correct for Render
 
-# Copy skills to home workspace too
-COPY skills/ema-execution /home/node/.openclaw/workspace/skills/ema-execution
-COPY skills/ema-dispatch-monitor /home/node/.openclaw/workspace/skills/ema-dispatch-monitor
-COPY skills/ema-verification /home/node/.openclaw/workspace/skills/ema-verification
-COPY skills/ema-pm-assistant /home/node/.openclaw/workspace/skills/ema-pm-assistant
+# Copy skills to home workspace too — all 9.
+COPY skills/ema-execution         /home/node/.openclaw/workspace/skills/ema-execution
+COPY skills/ema-dispatch-monitor  /home/node/.openclaw/workspace/skills/ema-dispatch-monitor
+COPY skills/ema-verification      /home/node/.openclaw/workspace/skills/ema-verification
+COPY skills/ema-pm-assistant      /home/node/.openclaw/workspace/skills/ema-pm-assistant
+COPY skills/ema-auth-request      /home/node/.openclaw/workspace/skills/ema-auth-request
+COPY skills/ema-escalation        /home/node/.openclaw/workspace/skills/ema-escalation
+COPY skills/ema-notification      /home/node/.openclaw/workspace/skills/ema-notification
+COPY skills/ema-reminder          /home/node/.openclaw/workspace/skills/ema-reminder
+COPY skills/ema-status-check      /home/node/.openclaw/workspace/skills/ema-status-check
 COPY workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
 COPY workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
 
