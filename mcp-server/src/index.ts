@@ -469,6 +469,65 @@ server.tool(
   },
 );
 
+// ── Phase 2 tools: queue + cron consumers ────────────────────────────
+
+server.tool(
+  'poll_openclaw_events',
+  'Claim pending workorder.* / run.* events from the openclaw_event_queue. Returns up to `limit` events oldest-first and atomically marks them acked (same event never delivered twice). Call once per heartbeat cycle.',
+  {
+    limit: z.number().optional().describe('Max events to claim per call. Default 50.'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID.'),
+  },
+  async ({ limit, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi('/api/dispatch/openclaw-events/poll', {
+      method: 'POST',
+      body: { workspaceId: wsId, limit: limit ?? 50 },
+      workspaceId: wsId,
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  'process_due_crons',
+  'Claim and fire any wo_cron rows whose firesAt <= now. Returns the list of crons that were just fired (workOrderId, cronType, metadata). The API marks each row fired atomically — caller is responsible for executing the cronType-specific action per HEARTBEAT.md Step 0. Call once per heartbeat cycle.',
+  {
+    limit: z.number().optional().describe('Max crons to process per call. Default 100.'),
+    workspaceId: z.string().optional().describe('Workspace to operate on. Defaults to env EMA_WORKSPACE_ID.'),
+  },
+  async ({ limit, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi('/api/dispatch/process-due-crons', {
+      method: 'POST',
+      body: { workspaceId: wsId, limit: limit ?? 100 },
+      workspaceId: wsId,
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  'schedule_cron',
+  'Schedule a per-WO cron (eta-reminder | arrival-check | noshow-trigger | verification | warranty). Replaces any prior pending cron of the same (workOrderId, cronType) — ensures ETA changes do not leave stale firings.',
+  {
+    workOrderId: z.string().describe('Work order UUID'),
+    cronType: z.enum(['eta-reminder', 'arrival-check', 'noshow-trigger', 'verification', 'warranty']),
+    firesAt: z.string().describe('ISO timestamp when the cron should fire'),
+    metadata: z.record(z.unknown()).optional().describe('Optional payload to attach to the cron'),
+    workspaceId: z.string().optional(),
+  },
+  async ({ workOrderId, cronType, firesAt, metadata, workspaceId }) => {
+    const wsId = resolveWorkspaceId(workspaceId);
+    const result = await emaApi('/api/dispatch/schedule-cron', {
+      method: 'POST',
+      body: { workOrderId, cronType, firesAt, metadata, workspaceId: wsId },
+      workspaceId: wsId,
+    });
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
 // ── Start Server ─────────────────────────────────────────────────────
 
 async function main() {
